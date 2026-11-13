@@ -1,0 +1,3 @@
+/* the lowest id is the file/exe icon: video. 2 = music (audio-only files) */
+1 ICON "assets/video.ico"
+2 ICON "assets/music.ico"
