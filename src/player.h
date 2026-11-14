@@ -174,6 +174,7 @@ typedef struct Player {
     int      fullscreen;
     WINDOWPLACEMENT wp;
     DWORD    last_input;
+    DWORD    vol_show_until;            /* volume popup stays until this tick */
     int      bars_visible, menu_open, mouse_tracked;
     int      hover, hover_down;
     int      dragging;                  /* 0 none, 1 seek, 2 volume */

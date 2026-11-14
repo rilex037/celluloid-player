@@ -537,6 +537,11 @@ static void on_timer(Player *p)
         }
     }
 
+    if (p->vol_show_until && (LONG)(p->vol_show_until - GetTickCount()) <= 0) {
+        p->vol_show_until = 0;
+        ui_invalidate(p, 0, 2);
+    }
+
     if (p->toast[0] && GetTickCount() > p->toast_until) {
         p->toast[0] = 0;
         ui_invalidate(p, 2, 0);
@@ -708,8 +713,21 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_MOUSEWHEEL: {
         int d = GET_WHEEL_DELTA_WPARAM(wp);
+        int bar_shown = p->fullscreen ? p->bars_visible : !p->ctl_hidden;
         set_volume(p, p->volume + (d > 0 ? 0.05 : -0.05));
         p->last_input = GetTickCount();
+        if (p->fullscreen && !p->bars_visible) {
+            p->bars_visible = 1;                /* reveal the bar with the popup */
+            bar_shown = 1;
+            ui_invalidate(p, 0, 1);
+        }
+        if (bar_shown) {                        /* volume popup, 0.5 s after the last tick */
+            p->vol_show_until = GetTickCount() + 500;
+            ui_invalidate(p, 0, 2);
+        } else {                                /* controls hidden: small toast instead */
+            ui_toast(p, L"Volume %d%%", (int)(p->volume * 100.0 + 0.5));
+            p->toast_until = GetTickCount() + 700;
+        }
         return 0;
     }
 

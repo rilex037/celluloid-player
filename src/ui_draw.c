@@ -303,7 +303,9 @@ static void bar_calc(const Player *p, BL *L)
 
 static int vol_visible(const Player *p)
 {
-    return p->hover == HT_VOL || p->hover == HT_VOL_TRACK || p->dragging == 2;
+    return p->hover == HT_VOL || p->hover == HT_VOL_TRACK || p->dragging == 2 ||
+           (p->vol_show_until &&
+            (LONG)(p->vol_show_until - GetTickCount()) > 0);
 }
 
 void ui_layout(const Player *p, RECT *cap, RECT *video, RECT *bar)
