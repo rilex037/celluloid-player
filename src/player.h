@@ -205,7 +205,7 @@ typedef struct Player {
     LONG_PTR fs_style;
 
     /* native caption: height and left edge of the system buttons (client px) */
-    int      cap_h, cap_btn_left;
+    int      cap_h, cap_btn_left, cap_btn_top;
     HICON    ico_video_big, ico_video_small, ico_music_big, ico_music_small;
     HICON    ico_small;                 /* icon currently shown in the caption */
 } Player;

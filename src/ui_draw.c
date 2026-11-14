@@ -165,32 +165,51 @@ static void frame_over(int *fx, int *fy)
     *fy = GetSystemMetrics(SM_CYSIZEFRAME) + pad;
 }
 
-/* the system caption buttons are drawn by DWM over our client area; ask it
- * where they are so our strip and the two custom buttons line up with them */
+/* The system caption buttons are drawn by DWM. Their bounds are reported
+ * relative to the visible frame (window rect minus the invisible resize
+ * border), so convert through screen coordinates into our client space. */
 void ui_caption_update(Player *p)
 {
-    RECT rb;
-    int fx = 0, fy = 0, W;
-    RECT rc;
+    RECT rb, vis, wr, rc;
+    POINT o = { 0, 0 };
+    int W;
 
+    p->cap_h = p->cap_btn_left = p->cap_btn_top = 0;
+    if (!p->hwnd)
+        return;
     GetClientRect(p->hwnd, &rc);
     W = rc.right;
-    if (p->hwnd && IsZoomed(p->hwnd))
-        frame_over(&fx, &fy);
-    p->cap_h = 0;
-    p->cap_btn_left = 0;
-    if (p->hwnd && SUCCEEDED(DwmGetWindowAttribute(p->hwnd,
-            DWMWA_CAPTION_BUTTON_BOUNDS_, &rb, sizeof(rb))) &&
+    if (!p->fullscreen &&
+        SUCCEEDED(DwmGetWindowAttribute(p->hwnd, DWMWA_CAPTION_BUTTON_BOUNDS_,
+                                        &rb, sizeof(rb))) &&
+        SUCCEEDED(DwmGetWindowAttribute(p->hwnd, 9 /* EXTENDED_FRAME_BOUNDS */,
+                                        &vis, sizeof(vis))) &&
         rb.right > rb.left && rb.bottom > rb.top) {
-        p->cap_h = rb.bottom - fy;
-        p->cap_btn_left = rb.left - fx;
+        int visW = vis.right - vis.left;
+        int winW;
+        int bx, by;
+        GetWindowRect(p->hwnd, &wr);
+        ClientToScreen(p->hwnd, &o);
+        winW = wr.right - wr.left;
+        if (abs(rb.right - visW) <= abs(rb.right - winW)) {
+            bx = vis.left;  by = vis.top;       /* relative to visible frame */
+        } else {
+            bx = wr.left;   by = wr.top;        /* relative to window rect */
+        }
+        p->cap_btn_left = bx + rb.left - o.x;
+        p->cap_btn_top = by + rb.top - o.y;
+        p->cap_h = by + rb.bottom - o.y;
+        if (p->cap_btn_top < 0)
+            p->cap_btn_top = 0;
     }
     if (p->cap_h < S_(24) || p->cap_h > S_(64) ||
         p->cap_btn_left < S_(80) || p->cap_btn_left > W) {
+        int fx, fy;
+        frame_over(&fx, &fy);
         p->cap_h = GetSystemMetrics(SM_CYCAPTION) +
-                   GetSystemMetrics(SM_CYSIZEFRAME) +
-                   GetSystemMetrics(SM_CXPADDEDBORDER) - fy;
+                   (IsZoomed(p->hwnd) ? 0 : fy);
         p->cap_btn_left = W - S_(46) * 3;
+        p->cap_btn_top = 0;
     }
 }
 
@@ -233,8 +252,9 @@ static void bar_calc(const Player *p, BL *L)
         int x = p->cap_btn_left;                /* same size as they are      */
         if (x <= 0 || x > W)
             x = W - bw * 3;
-        SetRect(&L->c_full, x - bw, 0, x, cap_h);
-        SetRect(&L->c_menu, x - bw * 2, 0, x - bw, cap_h);
+        int ty = p->cap_btn_top;                /* same top/bottom as native */
+        SetRect(&L->c_full, x - bw, ty, x, cap_h);
+        SetRect(&L->c_menu, x - bw * 2, ty, x - bw, cap_h);
     }
 
     if (show) {                                 /* control bar */
@@ -718,7 +738,7 @@ static void draw_header(Player *p, const BL *L)
     float cx, cy, s = SF(10);
     int cap_h = L->cap.bottom - L->cap.top;
 
-    fill_rgb(&L->cap, COL_CAPTION);
+    fill_rgb(&L->cap, RGB(0, 0, 0));    /* black + alpha 0 = DWM frame shows */
 
     if (p->hover == HT_CAP_FULL)
         fill_rgb(&L->c_full, p->hover_down == HT_CAP_FULL ? RGB(46, 46, 46)
@@ -906,16 +926,15 @@ void ui_paint(HWND hwnd)
         /* the caption strip is DWM "glass": pixels with alpha 0 would show
          * the system frame colour instead of ours, so make them opaque */
         RECT cr = L.cap, ir;
-        cr.bottom += 2;
         if (IntersectRect(&ir, &cr, &pr)) {
             int x, y, split = p->cap_btn_left;
             for (y = ir.top; y < ir.bottom; y++) {
                 UINT32 *px = (UINT32 *)g_bbits + (size_t)y * g_bw + ir.left;
                 for (x = ir.left; x < ir.right; x++, px++) {
                     if (x < split)
-                        *px |= 0xFF000000u;     /* ours: opaque */
+                        *px &= 0x00FFFFFFu;     /* frame colour behind ours... */
                     else
-                        *px = 0;                /* system buttons: DWM shows through */
+                        *px = 0;                /* ...and behind the system buttons */
                 }
             }
         }

@@ -238,6 +238,14 @@ static void toggle_fullscreen(Player *p)
     InvalidateRect(h, NULL, FALSE);
 }
 
+/* outer size minus client size: side + bottom frame (no caption) */
+static void frame_extra(int *dw, int *dh)
+{
+    int pad = GetSystemMetrics(SM_CXPADDEDBORDER);
+    *dw = 2 * (GetSystemMetrics(SM_CXSIZEFRAME) + pad);
+    *dh = GetSystemMetrics(SM_CYSIZEFRAME) + pad;
+}
+
 /* resize the window so the video fills it exactly (no black bars) */
 static void fit_window(Player *p)
 {
@@ -274,6 +282,10 @@ static void fit_window(Player *p)
         vh = vw / dar;
     }
     int W = (int)(vw + 0.5), H = (int)(vh + 0.5) + cap;
+    int dw, dh;
+    frame_extra(&dw, &dh);
+    W += dw;
+    H += dh;
     RECT r;
     GetWindowRect(h, &r);
     int x = (r.left + r.right) / 2 - W / 2;
@@ -557,6 +569,15 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_NCCALCSIZE:
         if (wp) {
+            if (!p->fullscreen && !IsZoomed(hwnd)) {
+                /* normal frame on left/right/bottom so the client lines up
+                 * with the visible window; no caption: it is our strip */
+                NCCALCSIZE_PARAMS *pr = (NCCALCSIZE_PARAMS *)lp;
+                LONG top = pr->rgrc[0].top;
+                LRESULT r = DefWindowProcW(hwnd, msg, wp, lp);
+                pr->rgrc[0].top = top;
+                return r;
+            }
             if (IsZoomed(hwnd) && !p->fullscreen) {
                 NCCALCSIZE_PARAMS *pr = (NCCALCSIZE_PARAMS *)lp;
                 int fx = GetSystemMetrics(SM_CXSIZEFRAME) +
@@ -582,18 +603,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         ScreenToClient(hwnd, &pt);
         RECT rc;
         GetClientRect(hwnd, &rc);
-        if (!IsZoomed(hwnd)) {
+        if (!IsZoomed(hwnd)) {          /* sides/bottom: native frame; top: ours */
             int e = S_(L_EDGE), e2 = e * 2;
-            if (pt.x < e)
-                return (pt.y < e2) ? HTTOPLEFT :
-                       (pt.y > rc.bottom - e2) ? HTBOTTOMLEFT : HTLEFT;
-            if (pt.x > rc.right - e)
-                return (pt.y < e2) ? HTTOPRIGHT :
-                       (pt.y > rc.bottom - e2) ? HTBOTTOMRIGHT : HTRIGHT;
             if (pt.y < e)
-                return HTTOP;
-            if (pt.y > rc.bottom - e)
-                return HTBOTTOM;
+                return (pt.x < e2) ? HTTOPLEFT :
+                       (pt.x > rc.right - e2) ? HTTOPRIGHT : HTTOP;
         }
         if (pt.y < ui_cap_h(p)) {
             int hit = ui_hit(p, pt.x, pt.y);
@@ -623,8 +637,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_GETMINMAXINFO: {
         MINMAXINFO *mm = (MINMAXINFO *)lp;
-        mm->ptMinTrackSize.x = S_(L_MIN_W);
-        mm->ptMinTrackSize.y = ui_cap_h(p) + S_(120);
+        int dw, dh;
+        frame_extra(&dw, &dh);
+        mm->ptMinTrackSize.x = S_(L_MIN_W) + dw;
+        mm->ptMinTrackSize.y = ui_cap_h(p) + S_(120) + dh;
         return 0;
     }
 
@@ -1062,7 +1078,9 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrev, PWSTR cmd, int nShow)
     wc.lpszClassName = APP_CLASS_W;
     RegisterClassW(&wc);
 
-    int W = S_(800), H = ui_cap_h(p) + S_(450);
+    int dw0, dh0;
+    frame_extra(&dw0, &dh0);
+    int W = S_(800) + dw0, H = ui_cap_h(p) + S_(450) + dh0;
     HWND hwnd = CreateWindowExW(0, APP_CLASS_W, APP_TITLE_W,
                                 WS_OVERLAPPEDWINDOW,
                                 CW_USEDEFAULT, CW_USEDEFAULT, W, H,
